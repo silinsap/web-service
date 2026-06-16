@@ -25,11 +25,13 @@ func main() {
 
 	log.Info("initializing server", slog.String("address", cfg.HTTPServer.Address)) // Помимо сообщения выведем параметр с адресом
 
+	// Инициализация хранилища
 	storage, err := sqlite.New(cfg.StoragePath)
 	if err != nil {
 		log.Error("failed to initialize storage", slog.String("err", err.Error()))
 	}
 
+	// Инициализация in-memory кеша
 	memory := memory.NewMemoryStorage()
 
 	router := gin.Default()

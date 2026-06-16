@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// GetLinks возвращает список всех ссылок с поддержкой пагинации через query параметры limit и offset.
 func GetLinks(log *slog.Logger, db *sqlite.Storage) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		limit := 10
@@ -27,7 +28,7 @@ func GetLinks(log *slog.Logger, db *sqlite.Storage) gin.HandlerFunc {
 				limit = l
 			}
 		}
-
+		// Получаем ссылки из БД с учетом пагинации
 		links, err := db.GetLinks(limit, offset)
 		if err != nil {
 			log.Error("Error fetching links", slog.Any("error", err))
@@ -38,6 +39,7 @@ func GetLinks(log *slog.Logger, db *sqlite.Storage) gin.HandlerFunc {
 	}
 }
 
+// PostLinks принимает JSON с полем original_url, генерирует уникальный short_code и сохраняет пару в БД.
 func PostLinks(log *slog.Logger, db *sqlite.Storage) gin.HandlerFunc {
 	return func(c *gin.Context) {
 
@@ -51,7 +53,7 @@ func PostLinks(log *slog.Logger, db *sqlite.Storage) gin.HandlerFunc {
 			c.IndentedJSON(http.StatusNotFound, gin.H{"message": "EmptyUrl"})
 			return
 		}
-
+		// Генерируем уникальный short_code и сохраняем пару в БД
 		newLink.Short_code = NewRandomString(6)
 		_, err := db.SaveLink(newLink.Short_code, newLink.Original_url)
 		if err != nil {
@@ -64,9 +66,11 @@ func PostLinks(log *slog.Logger, db *sqlite.Storage) gin.HandlerFunc {
 	}
 }
 
+// GetLinkByShortCode принимает short_code в URL, ищет соответствующую original_url и возвращает ее. Если short_code не найден, возвращает 404.
 func GetLinkByShortCode(log *slog.Logger, db *sqlite.Storage, memory *memory.MemoryStorage) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		short_code := c.Param("short_code")
+		// Сначала пытаемся найти ссылку в in-memory кеше, если не находим, то обращаемся к БД
 		link, exist := memory.GetByShortCode(short_code, true)
 
 		if !exist {
@@ -76,10 +80,11 @@ func GetLinkByShortCode(log *slog.Logger, db *sqlite.Storage, memory *memory.Mem
 				c.IndentedJSON(http.StatusNotFound, gin.H{"message": "Link not found"})
 				return
 			}
-
+			// Сохраняем найденную ссылку в in-memory кеш для ускорения последующих запросов
 			memory.Links[short_code] = &linkDB
 			c.IndentedJSON(http.StatusOK, models.Link{Original_url: linkDB.Original_url, Visits: linkDB.Visits})
 		} else {
+			// Если ссылка найдена в кеше, то возвращаем ее и увеличиваем счетчик посещений
 			db.AddVisit(short_code, *link)
 			c.IndentedJSON(http.StatusOK, models.Link{Original_url: link.Original_url, Visits: link.Visits})
 		}
@@ -87,9 +92,11 @@ func GetLinkByShortCode(log *slog.Logger, db *sqlite.Storage, memory *memory.Mem
 	}
 }
 
+// GetStatsByShortCode принимает short_code в URL и возвращает статистику по ссылке (кол-во посещений, дату создания). Если short_code не найден, возвращает 404.
 func GetStatsByShortCode(log *slog.Logger, db *sqlite.Storage, memory *memory.MemoryStorage) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		short_code := c.Param("short_code")
+		// Сначала пытаемся найти ссылку в in-memory кеше, если не находим, то обращаемся к БД
 		link, exist := memory.GetByShortCode(short_code, false)
 
 		if !exist {
@@ -105,9 +112,11 @@ func GetStatsByShortCode(log *slog.Logger, db *sqlite.Storage, memory *memory.Me
 	}
 }
 
+// DeleteLinkByShortCode принимает short_code в URL, удаляет соответствующую пару из БД и возвращает статус 200. Если short_code не найден, возвращает 404.
 func DeleteLinkByShortCode(log *slog.Logger, db *sqlite.Storage, memory *memory.MemoryStorage) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		short_code := c.Param("short_code")
+		// Сначала удаляем ссылку из in-memory кеша, затем из БД
 		memory.DeleteByShortCode(short_code)
 		err := db.DeleteLink(short_code)
 		if err != nil {
