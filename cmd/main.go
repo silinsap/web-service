@@ -1,8 +1,13 @@
 package main
 
 import (
+	"context"
 	"log/slog"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 	"web-service/internal/config"
 	"web-service/internal/httpserver"
 	"web-service/internal/memory"
@@ -25,11 +30,15 @@ func main() {
 		log.Error("failed to initialize storage", slog.String("err", err.Error()))
 	}
 
-	storage.SaveLink("abc123", "https://example.com")
-
 	memory := memory.NewMemoryStorage()
 
 	router := gin.Default()
+
+	// Создание сервера
+	srv := &http.Server{
+		Addr:    cfg.HTTPServer.Address,
+		Handler: router,
+	}
 
 	router.GET("/links", httpserver.GetLinks(log, storage))
 	router.POST("/links", httpserver.PostLinks(log, storage))
@@ -37,5 +46,23 @@ func main() {
 	router.DELETE("/links/:short_code", httpserver.DeleteLinkByShortCode(log, storage, memory))
 	router.GET("/links/:short_code/stats", httpserver.GetStatsByShortCode(log, storage, memory))
 
-	router.Run(cfg.HTTPServer.Address)
+	// Запуск сервера в отдельной горутине
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Error("Ошибка: %v", slog.String("err", err.Error()))
+		}
+	}()
+
+	// Ожидание сигналов ОС для graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	// Graceful shutdown с таймаутом 5 секунд
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Error("Ошибка: %v", slog.String("err", err.Error()))
+	}
+
 }

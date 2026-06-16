@@ -104,3 +104,65 @@ go build -o web-service.exe ./cmd/main.go
 
 Директория `internal/` содержит весь код приложения, организованный по функциональности, следуя лучшим практикам Go для структуры проекта.
 
+## Функциональность
+
+1. Создание короткой ссылки
+
+POST /links
+
+Request
+
+{
+  "url": "https://example.com/some/very/long/url"
+}
+
+Response
+
+{
+  "short_code": "abc123"
+}
+
+
+2. Получение оригинальной ссылки
+
+GET /links/{short_code}
+
+Response
+
+{
+  "url": "https://example.com/some/very/long/url",
+  "visits": 15
+}
+
+
+
+3. Получение списка ссылок
+
+GET /links
+
+Поддержка пагинации.
+
+Query параметры:
+
+limit  
+offset
+
+
+4. Удаление ссылки
+
+DELETE /links/{short_code}
+
+
+5. Статистика
+
+GET /links/{short_code}/stats
+
+Response
+
+{
+  "short_code": "abc123",
+  "url": "https://example.com",
+  "visits": 15,
+  "created_at": "timestamp"
+}
+
