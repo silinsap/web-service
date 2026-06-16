@@ -6,7 +6,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
-	"web-service/internal/storage"
+	"web-service/internal/memory"
+	"web-service/internal/models"
 	"web-service/internal/storage/sqlite"
 
 	"github.com/gin-gonic/gin"
@@ -40,7 +41,7 @@ func GetLinks(log *slog.Logger, db *sqlite.Storage) gin.HandlerFunc {
 func PostLinks(log *slog.Logger, db *sqlite.Storage) gin.HandlerFunc {
 	return func(c *gin.Context) {
 
-		var newLink storage.Link
+		var newLink models.Link
 
 		if err := c.BindJSON(&newLink); err != nil {
 			return
@@ -59,48 +60,62 @@ func PostLinks(log *slog.Logger, db *sqlite.Storage) gin.HandlerFunc {
 			return
 		}
 
-		c.IndentedJSON(http.StatusCreated, storage.Link{Short_code: newLink.Short_code})
+		c.IndentedJSON(http.StatusCreated, models.Link{Short_code: newLink.Short_code})
 	}
 }
 
-func GetLinkByShortCode(log *slog.Logger, db *sqlite.Storage) gin.HandlerFunc {
+func GetLinkByShortCode(log *slog.Logger, db *sqlite.Storage, memory *memory.MemoryStorage) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		short_code := c.Param("short_code")
+		link, exist := memory.GetByShortCode(short_code, true)
 
-		link, err := db.GetLink(short_code, true)
-		if err != nil {
-			c.IndentedJSON(http.StatusNotFound, gin.H{"message": "Link not found"})
-			return
+		if !exist {
+
+			linkDB, err := db.GetLink(short_code, true)
+			if err != nil {
+				c.IndentedJSON(http.StatusNotFound, gin.H{"message": "Link not found"})
+				return
+			}
+
+			memory.Links[short_code] = &linkDB
+			c.IndentedJSON(http.StatusOK, models.Link{Original_url: linkDB.Original_url, Visits: linkDB.Visits})
+		} else {
+			db.AddVisit(short_code, *link)
+			c.IndentedJSON(http.StatusOK, models.Link{Original_url: link.Original_url, Visits: link.Visits})
 		}
 
-		c.IndentedJSON(http.StatusOK, storage.Link{Original_url: link.Original_url, Visits: link.Visits})
 	}
 }
 
-func GetStatsByShortCode(log *slog.Logger, db *sqlite.Storage) gin.HandlerFunc {
+func GetStatsByShortCode(log *slog.Logger, db *sqlite.Storage, memory *memory.MemoryStorage) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		short_code := c.Param("short_code")
+		link, exist := memory.GetByShortCode(short_code, false)
 
-		link, err := db.GetLink(short_code, false)
-		if err != nil {
-			c.IndentedJSON(http.StatusNotFound, gin.H{"message": "Link not found"})
-			return
+		if !exist {
+			linkDB, err := db.GetLink(short_code, false)
+			if err != nil {
+				c.IndentedJSON(http.StatusNotFound, gin.H{"message": "Link not found"})
+				return
+			}
+			c.IndentedJSON(http.StatusOK, linkDB)
+		} else {
+			c.IndentedJSON(http.StatusOK, link)
 		}
-		c.IndentedJSON(http.StatusOK, link)
 	}
 }
 
-func DeleteLinkByShortCode(log *slog.Logger, db *sqlite.Storage) gin.HandlerFunc {
+func DeleteLinkByShortCode(log *slog.Logger, db *sqlite.Storage, memory *memory.MemoryStorage) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		short_code := c.Param("short_code")
-
+		memory.DeleteByShortCode(short_code)
 		err := db.DeleteLink(short_code)
 		if err != nil {
 			log.Error("Error deleting link", slog.Any("error", err))
 			c.IndentedJSON(http.StatusInternalServerError, gin.H{"message": "Error deleting link"})
 			return
 		}
-		c.IndentedJSON(http.StatusNotFound, gin.H{"message": "Link not found"})
+		c.IndentedJSON(http.StatusOK, gin.H{"message": "Link deleted"})
 	}
 }
 

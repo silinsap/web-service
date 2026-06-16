@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
-	"web-service/internal/storage"
+	"web-service/internal/models"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -70,38 +70,49 @@ func (s *Storage) SaveLink(Short_code string, OriginalUrl string) (int64, error)
 	return id, nil
 }
 
-func (s *Storage) GetLink(Short_code string, addVisit bool) (storage.Link, error) {
+func (s *Storage) GetLink(Short_code string, addVisit bool) (models.Link, error) {
 	const op = "storage.sqlite.GetLink"
 
 	stmt, err := s.db.Prepare("SELECT Short_code, Original_url, Visits, Created_at FROM links WHERE Short_code = ?")
 	if err != nil {
-		return storage.Link{}, fmt.Errorf("%s: prepare statement: %w", op, err)
+		return models.Link{}, fmt.Errorf("%s: prepare statement: %w", op, err)
 	}
 
-	var link storage.Link
+	var link models.Link
 	err = stmt.QueryRow(Short_code).Scan(&link.Short_code, &link.Original_url, &link.Visits, &link.Created_at)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return storage.Link{}, storage.ErrURLNotFound
+			return models.Link{}, models.ErrURLNotFound
 		}
 
-		return storage.Link{}, fmt.Errorf("%s: execute statement: %w", op, err)
+		return models.Link{}, fmt.Errorf("%s: execute statement: %w", op, err)
 	}
 	if addVisit {
 		link.Visits++ // Увеличиваем счетчик посещений
-		updateStmt, err := s.db.Prepare("UPDATE links SET Visits = ? WHERE Short_code = ?")
+		err = s.AddVisit(Short_code, link)
 		if err != nil {
-			return storage.Link{}, fmt.Errorf("%s: prepare update statement: %w", op, err)
-		}
-		_, err = updateStmt.Exec(link.Visits, link.Short_code)
-		if err != nil {
-			return storage.Link{}, fmt.Errorf("%s: execute update statement: %w", op, err)
+			return models.Link{}, fmt.Errorf("%s: add visit: %w", op, err)
 		}
 	}
 	return link, nil
 }
 
-func (s *Storage) GetLinks(limit int, offset int) ([]storage.Link, error) {
+func (s *Storage) AddVisit(Short_code string, link models.Link) error {
+	const op = "storage.sqlite.AddVisit"
+
+	updateStmt, err := s.db.Prepare("UPDATE links SET Visits = ? WHERE Short_code = ?")
+	if err != nil {
+		return fmt.Errorf("%s: prepare update statement: %w", op, err)
+	}
+	_, err = updateStmt.Exec(link.Visits, link.Short_code)
+	if err != nil {
+		return fmt.Errorf("%s: execute update statement: %w", op, err)
+	}
+	return nil
+
+}
+
+func (s *Storage) GetLinks(limit int, offset int) ([]models.Link, error) {
 	const op = "storage.sqlite.GetLinks"
 
 	rows, err := s.db.Query("SELECT Short_code, Original_url, Visits, Created_at FROM links LIMIT ? OFFSET ?", limit, offset)
@@ -110,9 +121,9 @@ func (s *Storage) GetLinks(limit int, offset int) ([]storage.Link, error) {
 	}
 	defer rows.Close()
 
-	var links []storage.Link
+	var links []models.Link
 	for rows.Next() {
-		var link storage.Link
+		var link models.Link
 		if err := rows.Scan(&link.Short_code, &link.Original_url, &link.Visits, &link.Created_at); err != nil {
 			return nil, fmt.Errorf("%s: scan row: %w", op, err)
 		}
@@ -124,11 +135,13 @@ func (s *Storage) GetLinks(limit int, offset int) ([]storage.Link, error) {
 
 func (s *Storage) DeleteLink(Short_code string) error {
 	const op = "storage.sqlite.DeleteLink"
+
 	stmt, err := s.db.Prepare("DELETE FROM links WHERE Short_code = ?")
 	if err != nil {
 		return fmt.Errorf("%s: prepare statement: %w", op, err)
 	}
 	_, err = stmt.Exec(Short_code)
+
 	if err != nil {
 		return fmt.Errorf("%s: execute statement: %w", op, err)
 	}

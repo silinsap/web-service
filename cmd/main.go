@@ -5,6 +5,7 @@ import (
 	"os"
 	"web-service/internal/config"
 	"web-service/internal/httpserver"
+	"web-service/internal/memory"
 	"web-service/internal/storage/sqlite"
 
 	"github.com/gin-gonic/gin"
@@ -26,13 +27,15 @@ func main() {
 
 	storage.SaveLink("abc123", "https://example.com")
 
+	memory := memory.NewMemoryStorage()
+
 	router := gin.Default()
 
 	router.GET("/links", httpserver.GetLinks(log, storage))
 	router.POST("/links", httpserver.PostLinks(log, storage))
-	router.GET("/links/:short_code", httpserver.GetLinkByShortCode(log, storage))
-	router.DELETE("/links/:short_code", httpserver.DeleteLinkByShortCode(log, storage))
-	router.GET("/links/:short_code/stats", httpserver.GetStatsByShortCode(log, storage))
+	router.GET("/links/:short_code", httpserver.GetLinkByShortCode(log, storage, memory))
+	router.DELETE("/links/:short_code", httpserver.DeleteLinkByShortCode(log, storage, memory))
+	router.GET("/links/:short_code/stats", httpserver.GetStatsByShortCode(log, storage, memory))
 
 	router.Run(cfg.HTTPServer.Address)
 }
